@@ -48,7 +48,7 @@ An agentic browser-automation tool that uses Gemini Flash to drive a real browse
 **Backend** — create `backend/.env`:
 ```
 GEMINI_API_KEY=your_gemini_api_key_here
-GEMINI_MODEL=gemini-2.5-flash
+GEMINI_MODEL=gemini-3.8-flash
 FIREBASE_SERVICE_ACCOUNT_KEY=./serviceAccountKey.json
 ```
 

@@ -14,7 +14,7 @@ from browser import create_page, take_screenshot, get_page_content
 from tasks import get_system_prompt
 
 MAX_STEPS = 15
-DEFAULT_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+DEFAULT_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
 
 
 def _get_genai_client() -> genai.Client:
@@ -36,6 +36,7 @@ async def _call_gemini(
     """Call the Gemini API with automatic fallback for model aliases."""
     models_to_try = [
         DEFAULT_MODEL,
+        "gemini-3.8-flash",
         "gemini-2.5-flash",
         "gemini-2.0-flash",
         "gemini-1.5-flash",
