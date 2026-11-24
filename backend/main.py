@@ -73,62 +73,83 @@ async def list_tasks():
 # ---------------------------------------------------------------------------
 
 
+@app.websocket("/ws")
 @app.websocket("/ws/agent")
 async def ws_agent(websocket: WebSocket):
     """Authenticate, receive a task, and stream agent steps back."""
-    # 1. Authenticate via query param
-    token = websocket.query_params.get("token")
-    if not token:
-        await websocket.close(code=4001, reason="Missing token")
-        return
-    try:
-        user = verify_token(token)
-    except Exception:
-        await websocket.close(code=4001, reason="Invalid token")
-        return
-
     await websocket.accept()
 
+    # Optional initial auth check from query param
+    token = websocket.query_params.get("token")
+    user = None
+    if token:
+        try:
+            user = verify_token(token)
+        except Exception:
+            pass
+
     try:
-        # 2. Receive the task payload
-        raw = await websocket.receive_text()
-        payload = json.loads(raw)
+        while True:
+            raw = await websocket.receive_text()
+            try:
+                payload = json.loads(raw)
+            except Exception:
+                await websocket.send_json({"type": "error", "message": "Invalid JSON format"})
+                continue
 
-        task_type = payload.get("taskType", "")
-        params = payload.get("params", {})
-        task_desc = payload.get("task", task_type)
+            msg_type = payload.get("type", "")
 
-        if task_type not in TASK_DEFINITIONS:
-            await websocket.send_json(
-                {"type": "error", "message": f"Unknown task type: {task_type}"}
-            )
-            return
+            # 1. Handle auth message from Lovable frontend
+            if msg_type == "auth":
+                auth_token = payload.get("token")
+                try:
+                    user = verify_token(auth_token)
+                except Exception:
+                    pass
+                continue
 
-        # 3. Acquire lock — single concurrent run
-        if _agent_lock.locked():
-            await websocket.send_json(
-                {
+            # 2. Handle stop message
+            if msg_type == "stop":
+                continue
+
+            # 3. Handle task execution message
+            task_desc = payload.get("task", "")
+            task_type = payload.get("taskType", "")
+            params = payload.get("params", {})
+            profile = payload.get("profile", {})
+
+            if profile:
+                params["fields"] = profile
+            params["customPrompt"] = task_desc
+
+            # Auto-classify task type if not specified
+            if not task_type or task_type not in TASK_DEFINITIONS:
+                task_lower = task_desc.lower()
+                if any(w in task_lower for w in ["price", "cheap", "cheapest", "cost", "compare", "amazon", "flipkart", "croma", "chroma", "walmart", "best buy"]):
+                    task_type = "price_comparison"
+                elif any(w in task_lower for w in ["form", "fill", "register", "submit", "profile", "contact"]):
+                    task_type = "form_autofill"
+                elif any(w in task_lower for w in ["order", "track", "status", "delivery", "shipping", "myntra"]):
+                    task_type = "order_status"
+                else:
+                    task_type = "price_comparison"
+
+            # Acquire lock — single concurrent run
+            if _agent_lock.locked():
+                await websocket.send_json({
                     "type": "error",
                     "message": "Another agent task is already running. Please wait.",
-                }
-            )
-            return
+                })
+                continue
 
-        async with _agent_lock:
-            await websocket.send_json({"type": "status", "message": "Agent started"})
-            await run_agent(task_desc, task_type, params, websocket)
+            async with _agent_lock:
+                await run_agent(task_desc, task_type, params, websocket)
 
     except WebSocketDisconnect:
         pass
-    except json.JSONDecodeError:
-        await websocket.send_json(
-            {"type": "error", "message": "Invalid JSON payload"}
-        )
     except Exception as exc:
         try:
-            await websocket.send_json(
-                {"type": "error", "message": f"Server error: {exc}"}
-            )
+            await websocket.send_json({"type": "error", "message": f"Server error: {exc}"})
         except Exception:
             pass
 

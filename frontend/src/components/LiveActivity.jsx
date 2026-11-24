@@ -253,7 +253,13 @@ export default function LiveActivity({
                             <tr key={i} className="hover:bg-[#1c2634]">
                               <td className="p-2 font-medium text-white">{item.site}</td>
                               <td className="p-2 truncate max-w-[140px]">{item.name}</td>
-                              <td className="p-2 font-bold text-emerald-400">${item.price}</td>
+                              <td className="p-2 font-bold text-emerald-400">
+                                {typeof item.price === 'string' && (item.price.startsWith('₹') || item.price.startsWith('$'))
+                                  ? item.price
+                                  : result.currency === '₹' || result.currency === 'INR'
+                                    ? `₹${item.price}`
+                                    : `$${item.price}`}
+                              </td>
                               <td className="p-2">
                                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400">
                                   {item.in_stock ? 'In Stock' : 'Available'}

@@ -51,24 +51,29 @@ def get_system_prompt(task_type: str, params: dict) -> str:
 # ---------------------------------------------------------------------------
 
 def _price_comparison_prompt(params: dict) -> str:
-    product = params.get("product_name", "unknown product")
+    product = params.get("product_name", "iPhone 15 Pro")
     budget = params.get("budget", "any")
+    custom_prompt = params.get("customPrompt", "")
+
     return f"""You are an AI browser-automation agent performing a price comparison.
 
-GOAL: Find the best prices for "{product}" with a maximum budget of ${budget}.
+USER REQUEST: "{custom_prompt or f'Find the best prices for {product}'}"
+PRODUCT: "{product}"
 
 INSTRUCTIONS:
-1. Search for the product on at least 2 major shopping sites (e.g. Amazon, Best Buy, Walmart).
-2. For each site, find the product listing, note the price, availability, and any relevant details.
-3. Compare the results.
+1. Examine the user request. If the user specified particular stores (e.g., Flipkart, Croma/Chroma, Amazon, Reliance Digital, Best Buy, Walmart), you MUST compare those exact stores.
+2. If Indian retailers (such as Flipkart, Croma, Reliance Digital) or Indian context are requested, use Indian Rupee (₹ / INR) and search Indian portals. Otherwise use the requested currency or $.
+3. Search for the product on the requested shopping sites.
+4. For each site, record the exact price, full product name, and availability.
+5. In the final recommendation, clearly identify which of the specified stores is the cheapest and compare the savings.
 
 When you are finished, respond with action "done" and include a "data" field with:
 {{
   "type": "price_comparison",
   "product": "{product}",
-  "budget": {budget},
+  "currency": "₹",
   "results": [
-    {{"site": "...", "price": ..., "name": "...", "url": "...", "in_stock": true/false}}
+    {{"site": "Store Name", "price": "₹1,27,990", "name": "Full Product Name", "in_stock": true}}
   ],
   "recommendation": "..."
 }}

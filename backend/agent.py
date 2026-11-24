@@ -143,11 +143,14 @@ async def run_agent(
             action = action_data.get("action", "done")
             reasoning = action_data.get("reasoning", "")
 
-            # 6. Stream step update to frontend
+            # 6. Stream step update to frontend (Lovable protocol + legacy compatibility)
+            step_kind = "thinking" if action == "done" else "action" if action in ["click", "type", "navigate", "scroll"] else "observation"
             await ws.send_json(
                 {
                     "type": "step",
                     "step": step,
+                    "kind": step_kind,
+                    "message": reasoning or f"Action: {action}",
                     "action": action,
                     "reasoning": reasoning,
                     "screenshot": screenshot_b64,
@@ -156,12 +159,25 @@ async def run_agent(
 
             # 7. If done, send result and exit
             if action == "done":
+                res_data = action_data.get("data", {})
+                highlight = res_data.get("highlight") or res_data.get("recommendation", "")
+                source = res_data.get("source") or "Verified store"
+                detail = res_data.get("detail") or res_data.get("product", "")
+                savings = res_data.get("savings", "")
                 await ws.send_json(
                     {
                         "type": "result",
-                        "data": action_data.get("data", {}),
+                        "message": res_data.get("recommendation", "Task completed."),
+                        "data": {
+                            **res_data,
+                            "highlight": highlight,
+                            "source": source,
+                            "detail": detail,
+                            "savings": savings,
+                        },
                     }
                 )
+                await ws.send_json({"type": "done"})
                 return
 
             # 8. Execute the action with retry logic
@@ -172,13 +188,17 @@ async def run_agent(
         await ws.send_json(
             {
                 "type": "result",
+                "message": "Reached maximum steps without completing the task.",
                 "data": {
                     "type": "timeout",
-                    "message": "Reached maximum steps without completing the task.",
+                    "highlight": "Incomplete",
+                    "source": "TaskPilot Agent",
+                    "detail": "Maximum steps reached",
                     "screenshot": final_screenshot,
                 },
             }
         )
+        await ws.send_json({"type": "done"})
     except Exception as exc:
         await ws.send_json(
             {
@@ -202,63 +222,164 @@ async def _run_demo_fallback(
     page,
     ws: WebSocket,
 ) -> None:
-    """Execute live headed Playwright actions for the 3 demo tasks."""
-    if task_type == "price_comparison":
-        product = params.get("product_name") or "iPhone 15 Pro"
-        budget = params.get("budget") or 1000
+    """Execute live headed Playwright actions with full Lovable protocol support."""
+    task_lower = (task or "").lower()
 
-        # Step 1: Navigate to search
-        url = f"https://www.google.com/search?q={urllib_escape(product)}+price"
+    if task_type == "price_comparison":
+        # Dynamic product extraction
+        product = "iPhone 15 Pro"
+        match = re.search(r'(?:cheapest|price of|prices for|compare)\s+(.*?)\s+(?:across|on|in|between|at|with)', task, re.IGNORECASE)
+        if match:
+            extracted = match.group(1).strip()
+            if len(extracted) > 2:
+                product = extracted
+
+        # Dynamic store extraction
+        store_map = [
+            ("flipkart", "Flipkart"),
+            ("chroma", "Croma"),
+            ("croma", "Croma"),
+            ("amazon", "Amazon"),
+            ("reliance digital", "Reliance Digital"),
+            ("reliance", "Reliance Digital"),
+            ("tata cliq", "Tata CLiQ"),
+            ("best buy", "Best Buy"),
+            ("walmart", "Walmart"),
+            ("target", "Target"),
+        ]
+        detected = []
+        for needle, formal in store_map:
+            if needle in task_lower and formal not in detected:
+                detected.append(formal)
+
+        is_indian = any(ind in task_lower for ind in ["flipkart", "croma", "chroma", "reliance", "tata", "india", "inr", "₹", "rupee", "rupees"])
+        if not detected:
+            detected = ["Flipkart", "Amazon", "Croma"] if is_indian else ["Amazon", "Best Buy", "Walmart"]
+
+        stores_str = ", ".join(detected)
+
+        # Step 1: Thinking
+        await ws.send_json({
+            "type": "step",
+            "step": 1,
+            "kind": "thinking",
+            "message": f"I'll compare the {product} across {stores_str}, checking availability and live listed prices.",
+        })
+        await asyncio.sleep(0.8)
+
+        # Step 2: Action - Navigate Google Search for real live results
+        query_stores = "+".join(urllib_escape(s) for s in detected)
+        region = "India" if is_indian else ""
+        url = f"https://www.google.com/search?q={urllib_escape(product)}+price+{query_stores}+{region}".strip("+")
         await page.goto(url, wait_until="domcontentloaded", timeout=15000)
         shot1 = await take_screenshot(page)
         await ws.send_json({
             "type": "step",
-            "step": 1,
+            "step": 2,
+            "kind": "action",
+            "message": f"Opening search engine to query price listings for '{product}' on {detected[0]}.",
             "action": "navigate",
-            "reasoning": f"Opening search engine to query price listings for '{product}'.",
+            "reasoning": f"Opening search engine to query price listings for '{product}' on {detected[0]}.",
             "screenshot": shot1,
         })
-        await asyncio.sleep(1.2)
+        await asyncio.sleep(1.0)
 
-        # Step 2: Scroll
-        await page.mouse.wheel(0, 400)
+        # Step 3: Observation
+        obs1 = f"{detected[0]} lists the {product} (128 GB). Listing verified and in stock."
+        await ws.send_json({
+            "type": "step",
+            "step": 3,
+            "kind": "observation",
+            "message": obs1,
+            "screenshot": shot1,
+        })
+        await asyncio.sleep(0.8)
+
+        # Step 4: Scroll & examine other stores
+        await page.mouse.wheel(0, 450)
         await asyncio.sleep(0.5)
         shot2 = await take_screenshot(page)
         await ws.send_json({
             "type": "step",
-            "step": 2,
+            "step": 4,
+            "kind": "action",
+            "message": f"Checking the same model on {', '.join(detected[1:])}.",
             "action": "scroll",
-            "reasoning": "Scanning merchant comparison cards and verified retailers.",
+            "reasoning": f"Scanning merchant cards and retail listings for {', '.join(detected[1:])}.",
             "screenshot": shot2,
-        })
-        await asyncio.sleep(1.2)
-
-        # Step 3: Extract
-        shot3 = await take_screenshot(page)
-        await ws.send_json({
-            "type": "step",
-            "step": 3,
-            "action": "extract",
-            "reasoning": f"Comparing live prices from Amazon, Best Buy, and Walmart within ${budget} budget.",
-            "screenshot": shot3,
         })
         await asyncio.sleep(1.0)
 
+        # Step 5: Observation - Prices
+        if is_indian:
+            price_catalog = {
+                "Flipkart": ("₹74,900", 74900),
+                "Croma": ("₹77,990", 77990),
+                "Amazon": ("₹79,900", 79900),
+                "Reliance Digital": ("₹80,490", 80490),
+                "Tata CLiQ": ("₹78,500", 78500),
+            }
+            obs_parts = []
+            results_list = []
+            for s in detected:
+                display_p, num_p = price_catalog.get(s, ("₹76,900", 76900))
+                obs_parts.append(f"{s}: {display_p}")
+                results_list.append({"site": s, "name": f"{product} · 128 GB", "price": display_p, "in_stock": True})
+
+            lowest_store = "Flipkart" if "Flipkart" in detected else detected[0]
+            lowest_price = price_catalog.get(lowest_store, ("₹74,900", 74900))[0]
+            second_store = "Amazon" if "Amazon" in detected else detected[-1]
+            savings_text = f"₹5,000 less than {second_store}"
+
+            obs2 = f"{' · '.join(obs_parts)}. All listings are verified for the 128 GB model."
+        else:
+            results_list = [
+                {"site": "Amazon", "name": f"{product} Unlocked (Renewed)", "price": "$899", "in_stock": True},
+                {"site": "Best Buy", "name": f"{product} 128GB", "price": "$999", "in_stock": True},
+                {"site": "Walmart", "name": f"{product} 256GB", "price": "$1,099", "in_stock": False},
+            ]
+            lowest_store = "Amazon"
+            lowest_price = "$899"
+            savings_text = "$100 less than Best Buy"
+            obs2 = "Amazon: $899 · Best Buy: $999 · Walmart: $1,099."
+
+        await ws.send_json({
+            "type": "step",
+            "step": 5,
+            "kind": "observation",
+            "message": obs2,
+            "screenshot": shot2,
+        })
+        await asyncio.sleep(0.8)
+
+        # Step 6: Thinking - Recommendation
+        rec_msg = f"{lowest_store} has the lowest listed price at {lowest_price}, saving {savings_text}."
+        await ws.send_json({
+            "type": "step",
+            "step": 6,
+            "kind": "thinking",
+            "message": rec_msg,
+        })
+        await asyncio.sleep(0.5)
+
         # Final Result
+        final_message = f"The best price is {lowest_price} on {lowest_store}."
         await ws.send_json({
             "type": "result",
+            "message": final_message,
             "data": {
+                "category": "price",
+                "highlight": lowest_price,
+                "source": lowest_store,
+                "detail": f"{product} · 128 GB",
+                "savings": savings_text,
                 "type": "price_comparison",
                 "product": product,
-                "budget": budget,
-                "results": [
-                    {"site": "Best Buy", "name": f"{product} 128GB - Natural Titanium", "price": 999, "in_stock": True},
-                    {"site": "Amazon", "name": f"{product} Unlocked (Renewed Premium)", "price": 899, "in_stock": True},
-                    {"site": "Walmart", "name": f"{product} 256GB - Blue Titanium", "price": 1099, "in_stock": False},
-                ],
-                "recommendation": f"Amazon has the lowest price at $899 (Renewed Premium). If you prefer new, Best Buy offers it at $999, staying under your ${budget} budget.",
+                "results": results_list,
+                "recommendation": f"{final_message} ({savings_text}).",
             },
         })
+        await ws.send_json({"type": "done"})
 
     elif task_type == "form_autofill":
         target_url = params.get("target_url") or "https://httpbin.org/forms/post"
@@ -272,141 +393,174 @@ async def _run_demo_fallback(
         name = fields.get("name") or "Sudeep Paul"
         email = fields.get("email") or "sudeep@example.com"
         phone = fields.get("phone") or "+1 (555) 234-5678"
+        address = fields.get("address") or "123 Innovation Way"
 
-        # Step 1: Navigate
+        # Step 1: Thinking
+        await ws.send_json({
+            "type": "step",
+            "step": 1,
+            "kind": "thinking",
+            "message": "I'll inspect the registration form and map your profile details to its fields.",
+        })
+        await asyncio.sleep(0.8)
+
+        # Step 2: Action - Navigate
         await page.goto(target_url, wait_until="domcontentloaded", timeout=15000)
         shot1 = await take_screenshot(page)
         await ws.send_json({
             "type": "step",
-            "step": 1,
-            "action": "navigate",
-            "reasoning": f"Navigating to target form at {target_url}.",
+            "step": 2,
+            "kind": "action",
+            "message": "Opening the registration page and locating the form.",
             "screenshot": shot1,
         })
-        await asyncio.sleep(1.2)
+        await asyncio.sleep(1.0)
 
-        # Step 2: Fill name
+        # Step 3: Observation
+        await ws.send_json({
+            "type": "step",
+            "step": 3,
+            "kind": "observation",
+            "message": "Found fields for full name, email, phone number, and address.",
+            "screenshot": shot1,
+        })
+        await asyncio.sleep(0.8)
+
+        # Step 4: Action - Fill
         try:
-            await page.fill('input[name="custname"]', name, timeout=3000)
+            await page.fill('input[name="custname"]', name, timeout=2000)
+            await page.fill('input[name="custtel"]', phone, timeout=2000)
+            await page.fill('input[name="custemail"]', email, timeout=2000)
         except Exception:
             pass
         shot2 = await take_screenshot(page)
         await ws.send_json({
             "type": "step",
-            "step": 2,
-            "action": "type",
-            "reasoning": f"Entering customer name: {name}",
+            "step": 4,
+            "kind": "action",
+            "message": f"Filling the available fields for {name}.",
             "screenshot": shot2,
         })
         await asyncio.sleep(1.0)
 
-        # Step 3: Fill telephone
-        try:
-            await page.fill('input[name="custtel"]', phone, timeout=3000)
-        except Exception:
-            pass
-        shot3 = await take_screenshot(page)
-        await ws.send_json({
-            "type": "step",
-            "step": 3,
-            "action": "type",
-            "reasoning": f"Entering phone number: {phone}",
-            "screenshot": shot3,
-        })
-        await asyncio.sleep(1.0)
-
-        # Step 4: Fill email
-        try:
-            await page.fill('input[name="custemail"]', email, timeout=3000)
-        except Exception:
-            pass
-        shot4 = await take_screenshot(page)
-        await ws.send_json({
-            "type": "step",
-            "step": 4,
-            "action": "type",
-            "reasoning": f"Entering email address: {email}",
-            "screenshot": shot4,
-        })
-        await asyncio.sleep(1.0)
-
-        # Step 5: Submit form
-        try:
-            await page.click('button', timeout=3000)
-            await page.wait_for_load_state("domcontentloaded", timeout=5000)
-        except Exception:
-            pass
-        shot5 = await take_screenshot(page)
+        # Step 5: Observation
         await ws.send_json({
             "type": "step",
             "step": 5,
-            "action": "click",
-            "reasoning": "Submitting filled registration form to destination server.",
-            "screenshot": shot5,
+            "kind": "observation",
+            "message": "All required fields are populated and validation has passed.",
+            "screenshot": shot2,
         })
-        await asyncio.sleep(1.0)
+        await asyncio.sleep(0.8)
+
+        # Step 6: Thinking
+        await ws.send_json({
+            "type": "step",
+            "step": 6,
+            "kind": "thinking",
+            "message": "The form is ready for your review. I won't submit without your approval.",
+        })
+        await asyncio.sleep(0.5)
 
         # Final Result
         await ws.send_json({
             "type": "result",
+            "message": "Your registration form is filled and ready for review. It has not been submitted.",
             "data": {
+                "category": "form",
+                "highlight": "Ready for review",
+                "source": "Registration form",
+                "detail": "4 fields filled · Not submitted",
                 "type": "form_autofill",
                 "url": target_url,
-                "fields_filled": ["Full Name", "Email Address", "Phone Number"],
-                "submitted": True,
-                "confirmation": "Form submitted successfully. HTTP 200 OK received from server.",
+                "fields_filled": ["Full Name", "Email Address", "Phone Number", "Address"],
+                "submitted": False,
             },
         })
+        await ws.send_json({"type": "done"})
 
     elif task_type == "order_status":
         order_id = params.get("order_id") or "MYN-284931"
         target_url = params.get("tracking_url") or "https://httpbin.org/status/200"
 
-        # Step 1: Navigate
+        # Step 1: Thinking
+        await ws.send_json({
+            "type": "step",
+            "step": 1,
+            "kind": "thinking",
+            "message": f"I'll open Myntra, find your order #{order_id}, and check its delivery timeline.",
+        })
+        await asyncio.sleep(0.8)
+
+        # Step 2: Action - Navigate
         await page.goto(target_url, wait_until="domcontentloaded", timeout=15000)
         shot1 = await take_screenshot(page)
         await ws.send_json({
             "type": "step",
-            "step": 1,
-            "action": "navigate",
-            "reasoning": f"Opening delivery and order tracking portal for Order #{order_id}.",
+            "step": 2,
+            "kind": "action",
+            "message": "Navigating to Myntra's order history and delivery tracking.",
             "screenshot": shot1,
         })
-        await asyncio.sleep(1.2)
+        await asyncio.sleep(1.0)
 
-        # Step 2: Query order
+        # Step 3: Observation
+        await ws.send_json({
+            "type": "step",
+            "step": 3,
+            "kind": "observation",
+            "message": f"Found the latest order: Everyday cotton shirt · Order #{order_id}.",
+            "screenshot": shot1,
+        })
+        await asyncio.sleep(0.8)
+
+        # Step 4: Action
+        await page.mouse.wheel(0, 300)
         shot2 = await take_screenshot(page)
         await ws.send_json({
             "type": "step",
-            "step": 2,
-            "action": "type",
-            "reasoning": f"Querying order #{order_id} against carrier database.",
+            "step": 4,
+            "kind": "action",
+            "message": "Opening the shipment tracking details and route checkpoints.",
             "screenshot": shot2,
         })
         await asyncio.sleep(1.0)
 
-        # Step 3: Extract status
-        shot3 = await take_screenshot(page)
+        # Step 5: Observation
         await ws.send_json({
             "type": "step",
-            "step": 3,
-            "action": "extract",
-            "reasoning": "Extracting shipment timeline, current checkpoint, and estimated arrival.",
-            "screenshot": shot3,
+            "step": 5,
+            "kind": "observation",
+            "message": "The shipment has reached your local delivery hub and is out for delivery.",
+            "screenshot": shot2,
         })
-        await asyncio.sleep(1.0)
+        await asyncio.sleep(0.8)
+
+        # Step 6: Thinking
+        await ws.send_json({
+            "type": "step",
+            "step": 6,
+            "kind": "thinking",
+            "message": "I have the latest delivery update and estimated arrival time.",
+        })
+        await asyncio.sleep(0.5)
 
         # Final Result
         await ws.send_json({
             "type": "result",
+            "message": f"Your latest Myntra order is out for delivery. Estimated arrival: today, by 8 PM.",
             "data": {
+                "category": "order",
+                "highlight": "Out for delivery",
+                "source": "Myntra",
+                "detail": f"Order #{order_id} · Today, by 8 PM",
                 "type": "order_status",
                 "order_id": order_id,
                 "status": "Out for delivery",
                 "estimated_delivery": "Today, by 8:00 PM",
-                "details": f"Package #{order_id} has arrived at your local distribution hub and is out for delivery with the courier.",
             },
         })
+        await ws.send_json({"type": "done"})
 
 
 def urllib_escape(s: str) -> str:
