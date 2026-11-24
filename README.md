@@ -67,7 +67,8 @@ VITE_WS_URL=ws://localhost:8000/ws/agent
 cd backend
 pip install -r requirements.txt
 playwright install chromium
-uvicorn main:app --reload --port 8000
+uvicorn main:app --port 8000
+# or: python run.py
 ```
 
 **Frontend** (in a second terminal):

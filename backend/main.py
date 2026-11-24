@@ -2,6 +2,11 @@
 
 import asyncio
 import json
+import sys
+
+# Ensure Windows uses ProactorEventLoop for subprocesses (required by Playwright)
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
 from dotenv import load_dotenv
 
@@ -126,3 +131,9 @@ async def ws_agent(websocket: WebSocket):
             )
         except Exception:
             pass
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run("main:app", host="127.0.0.1", port=8000)
