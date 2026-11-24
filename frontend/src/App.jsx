@@ -1,21 +1,37 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth, getIdToken, signOutUser } from './firebase';
-import Login from './components/Login';
-import TaskInput from './components/TaskInput';
-import AgentPanel from './components/AgentPanel';
-import ResultsPanel from './components/ResultsPanel';
+
+import Navbar from './components/Navbar';
+import HeroAndInput from './components/HeroAndInput';
+import LiveActivity from './components/LiveActivity';
+import AgentWorkspaceSidebar from './components/AgentWorkspaceSidebar';
+import Footer from './components/Footer';
+import AutofillModal from './components/AutofillModal';
+import LoginModal from './components/LoginModal';
 
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws/agent';
 
 export default function App() {
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  const [isAutofillModalOpen, setIsAutofillModalOpen] = useState(false);
+
+  const [autofillProfile, setAutofillProfile] = useState({
+    name: 'Sudeep Paul',
+    email: 'sudeep@example.com',
+    phone: '+1 (555) 234-5678',
+    address: '123 Innovation Way, Suite 400',
+  });
+
   const [steps, setSteps] = useState([]);
   const [result, setResult] = useState(null);
   const [taskType, setTaskType] = useState(null);
+  const [currentTaskTitle, setCurrentTaskTitle] = useState('');
   const [isRunning, setIsRunning] = useState(false);
   const [error, setError] = useState(null);
+
   const wsRef = useRef(null);
 
   useEffect(() => {
@@ -33,19 +49,32 @@ export default function App() {
     }
   }, []);
 
-  const handleSubmitTask = useCallback(
-    async (task) => {
+  const handleStopTask = useCallback(() => {
+    cleanupWs();
+    setIsRunning(false);
+  }, [cleanupWs]);
+
+  const handleRunTask = useCallback(
+    async (taskPayload) => {
+      // If user isn't logged in, prompt sign in first
+      if (!user) {
+        setIsLoginModalOpen(true);
+        return;
+      }
+
       setSteps([]);
       setResult(null);
       setError(null);
       setIsRunning(true);
-      setTaskType(task.taskType);
+      setTaskType(taskPayload.taskType);
+      setCurrentTaskTitle(taskPayload.task);
 
       try {
         const token = await getIdToken();
         if (!token) {
-          setError('Authentication token not available. Please sign in again.');
+          setError('Authentication token expired. Please sign in again.');
           setIsRunning(false);
+          setIsLoginModalOpen(true);
           return;
         }
 
@@ -54,13 +83,12 @@ export default function App() {
         wsRef.current = ws;
 
         ws.onopen = () => {
-          ws.send(JSON.stringify(task));
+          ws.send(JSON.stringify(taskPayload));
         };
 
         ws.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
-
             switch (data.type) {
               case 'step':
                 setSteps((prev) => [
@@ -90,95 +118,126 @@ export default function App() {
                 break;
             }
           } catch {
-            // ignore malformed messages
+            // ignore non-json messages
           }
         };
 
         ws.onerror = () => {
-          setError('WebSocket connection error. Is the backend running?');
+          setError('Failed to connect to backend agent on port 8000. Ensure python run.py is running.');
           setIsRunning(false);
         };
 
         ws.onclose = (event) => {
           if (event.code !== 1000 && isRunning) {
-            setError('Connection to server lost.');
+            setError('Connection to backend server closed.');
             setIsRunning(false);
           }
         };
       } catch (err) {
-        setError(err.message || 'Failed to start task.');
+        setError(err.message || 'Failed to start agent task.');
         setIsRunning(false);
       }
     },
-    [cleanupWs, isRunning],
+    [user, cleanupWs, isRunning],
   );
 
   useEffect(() => {
     return () => cleanupWs();
   }, [cleanupWs]);
 
-  if (authLoading) {
-    return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <div className="flex gap-1.5">
-          <div className="w-2.5 h-2.5 bg-indigo-500 rounded-full thinking-dot" />
-          <div className="w-2.5 h-2.5 bg-indigo-500 rounded-full thinking-dot" />
-          <div className="w-2.5 h-2.5 bg-indigo-500 rounded-full thinking-dot" />
-        </div>
-      </div>
-    );
-  }
+  // Derived counts for sidebar metrics
+  const actionCount = steps.filter((s) => {
+    const act = (s.action || '').toLowerCase();
+    return act === 'click' || act === 'type' || act === 'navigate' || act === 'scroll';
+  }).length;
 
-  if (!user) {
-    return <Login />;
-  }
+  const thinkingCount = steps.filter((s) => {
+    const act = (s.action || '').toLowerCase();
+    return act !== 'click' && act !== 'type' && act !== 'navigate' && act !== 'scroll';
+  }).length;
 
   return (
-    <div className="min-h-screen bg-slate-950 flex flex-col">
-      {/* Header */}
-      <header className="border-b border-slate-800 bg-slate-900/80 backdrop-blur-sm sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <span className="text-2xl">🤖</span>
-            <h1 className="text-xl font-bold text-white tracking-tight">
-              Task<span className="text-indigo-400">Pilot</span>
-            </h1>
-          </div>
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-slate-400 hidden sm:inline">
-              {user.email}
-            </span>
-            <button
-              onClick={signOutUser}
-              className="text-sm px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white transition-colors"
-            >
-              Sign Out
-            </button>
-          </div>
-        </div>
-      </header>
+    <div className="min-h-screen bg-[#090a0d] text-slate-200 flex flex-col font-sans selection:bg-[#f95721]/30 selection:text-white">
+      {/* Top Navbar */}
+      <Navbar
+        user={user}
+        onOpenLogin={() => setIsLoginModalOpen(true)}
+        onSignOut={signOutUser}
+        isConnected={!error}
+      />
 
-      {/* Main content */}
-      <main className="flex-1 max-w-7xl mx-auto w-full px-6 py-6">
+      {/* Main Container */}
+      <main className="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 py-6 sm:py-8 space-y-6">
+        {/* Error Notification Banner */}
         {error && (
-          <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm animate-fade-in">
-            <span className="font-medium">Error:</span> {error}
+          <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-xl text-red-400 text-xs flex items-center justify-between animate-fade-in">
+            <div>
+              <strong className="font-semibold">Notice:</strong> {error}
+            </div>
             <button
               onClick={() => setError(null)}
-              className="ml-3 text-red-300 hover:text-white"
+              className="text-red-300 hover:text-white px-2 py-0.5 rounded text-xs"
             >
               ✕
             </button>
           </div>
         )}
 
-        <TaskInput onSubmitTask={handleSubmitTask} isRunning={isRunning} />
+        {/* 2-Column Responsive Layout matching Lovable design */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          {/* Left Column: Hero, Input & Live Activity (8 of 12 cols on desktop) */}
+          <div className="lg:col-span-8 space-y-6">
+            <HeroAndInput
+              onRunTask={handleRunTask}
+              onStopTask={handleStopTask}
+              isRunning={isRunning}
+              onOpenAutofill={() => setIsAutofillModalOpen(true)}
+              autofillProfile={autofillProfile}
+            />
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
-          <AgentPanel steps={steps} isRunning={isRunning} />
-          <ResultsPanel result={result} taskType={taskType} />
+            <LiveActivity
+              steps={steps}
+              isRunning={isRunning}
+              result={result}
+              taskType={taskType}
+              currentTaskTitle={currentTaskTitle}
+              onReset={() => {
+                setSteps([]);
+                setResult(null);
+                setCurrentTaskTitle('');
+              }}
+            />
+          </div>
+
+          {/* Right Column: Agent Workspace Sidebar (4 of 12 cols on desktop) */}
+          <div className="lg:col-span-4">
+            <AgentWorkspaceSidebar
+              isRunning={isRunning}
+              stepCount={steps.length}
+              actionCount={actionCount}
+              thinkingCount={thinkingCount}
+              onOpenAutofill={() => setIsAutofillModalOpen(true)}
+            />
+          </div>
         </div>
       </main>
+
+      {/* Footer */}
+      <Footer />
+
+      {/* Autofill Profile Modal */}
+      <AutofillModal
+        isOpen={isAutofillModalOpen}
+        onClose={() => setIsAutofillModalOpen(false)}
+        profile={autofillProfile}
+        onSaveProfile={(newProfile) => setAutofillProfile(newProfile)}
+      />
+
+      {/* Firebase Sign-in Modal */}
+      <LoginModal
+        isOpen={isLoginModalOpen}
+        onClose={() => setIsLoginModalOpen(false)}
+      />
     </div>
   );
 }
