@@ -1,7 +1,9 @@
 import {
+  ArrowUp,
   ArrowUpRight,
   Brain,
   Check,
+  ChevronDown,
   ChevronRight,
   CircleAlert,
   Clock3,
@@ -16,7 +18,8 @@ import {
   UserRound,
   Zap,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
+import { motion } from "motion/react";
 import { useNavigate, useRouter } from "@/context/RouterContext";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
@@ -30,6 +33,7 @@ import { ResultPanel } from "./ResultPanel";
 import { ProfilePanel } from "./ProfilePanel";
 import DecryptedText from "@/components/bits/DecryptedText/DecryptedText";
 import SpotlightCard from "@/components/bits/SpotlightCard/SpotlightCard";
+
 export function Workspace() {
   const { user, loading, error: authIssue } = useAuth();
   const agent = useTaskSocket(user);
@@ -40,13 +44,47 @@ export function Workspace() {
   const [signOutError, setSignOutError] = useState<string | null>(null);
   const navigate = useNavigate();
   const router = useRouter();
-  const isGuest = !user;
+
+  const liveSectionRef = useRef<HTMLDivElement>(null);
+  const resultSectionRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     if (!agent.running) return;
     setNow(Date.now());
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, [agent.running]);
+
+  // When task starts running, smoothly scroll to Live Activity section
+  const handleRun = () => {
+    agent.run(input, profile.profile);
+    setTimeout(() => {
+      liveSectionRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, 200);
+  };
+
+  // When result arrives, smoothly scroll to Result section
+  useEffect(() => {
+    if (agent.result) {
+      const timer = setTimeout(() => {
+        resultSectionRef.current?.scrollIntoView({ behavior: "smooth" });
+      }, 400);
+      return () => clearTimeout(timer);
+    }
+  }, [agent.result]);
+
+  const scrollToLive = () => {
+    liveSectionRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  const scrollToResult = () => {
+    resultSectionRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  const scrollToTop = () => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
   async function signOut() {
     try {
       if (agent.running) agent.stop();
@@ -59,6 +97,7 @@ export function Workspace() {
       setSignOutError("Could not sign out. Please try again.");
     }
   }
+
   if (loading)
     return (
       <div className="session-loading">
@@ -66,17 +105,20 @@ export function Workspace() {
         <p>{authIssue ?? "Opening your workspace…"}</p>
       </div>
     );
+
   const elapsed = agent.startedAt
     ? Math.max(0, Math.floor(((agent.endedAt ?? now) - agent.startedAt) / 1000))
     : 0;
   const completed = Boolean(agent.result && !agent.running);
   const actions = agent.steps.filter((step) => step.kind === "action").length;
   const thoughts = agent.steps.filter((step) => step.kind === "thinking").length;
+
   function reset() {
     agent.reset();
     setInput("");
     document.querySelector<HTMLTextAreaElement>('[aria-label="Describe your task"]')?.focus();
   }
+
   return (
     <div className="app-shell">
       <Header
@@ -87,184 +129,294 @@ export function Workspace() {
         signIn={() => void navigate({ to: "/auth" })}
       />
       <main className="main-workspace">
-        <div className="workspace-topline">
-          <div>
-            <span className="breadcrumb-icon">
-              <Command size={13} />
-            </span>{" "}
-            Workspace <ChevronRight size={12} />
-            <span>New task</span>
+        {/* ======================================================== */}
+        {/* SECTION 1: HERO TASK COMPOSER (Visible on initial view)  */}
+        {/* ======================================================== */}
+        <section className="hero-task-section">
+          <div className="workspace-topline">
+            <div>
+              <span className="breadcrumb-icon">
+                <Command size={13} />
+              </span>{" "}
+              Workspace <ChevronRight size={12} />
+              <span>New task</span>
+            </div>
+            <span className="session-label">
+              <LockKeyhole size={12} />
+              {mockMode ? "Demo workspace" : "Private workspace"}
+            </span>
           </div>
-          <span className="session-label">
-            <LockKeyhole size={12} />
-            {mockMode ? "Demo workspace" : "Private workspace"}
-          </span>
-        </div>
-        <TaskInput
-          value={input}
-          onChange={setInput}
-          running={agent.running}
-          connected={agent.status === "connected"}
-          run={() => agent.run(input, profile.profile)}
-          stop={agent.stop}
-          openProfile={() => setProfileOpen(true)}
-        />
-        {(agent.error || signOutError) && (
-          <div className="error-banner" role="alert">
-            <CircleAlert size={17} />
-            <span>{agent.error ?? signOutError}</span>
-            {agent.status !== "connected" && !agent.running && (
-              <Button variant="outline" size="sm" onClick={agent.reconnect}>
-                <RotateCw size={13} />
-                Reconnect
-              </Button>
-            )}
-          </div>
-        )}
-        <div className="workspace-grid">
-          <div className="main-column">
-            <StepFeed
-              steps={agent.steps}
+
+          <div className="hero-composer-center">
+            <TaskInput
+              value={input}
+              onChange={setInput}
               running={agent.running}
-              task={agent.task}
-              completed={completed}
+              connected={agent.status === "connected"}
+              run={handleRun}
+              stop={agent.stop}
+              openProfile={() => setProfileOpen(true)}
             />
-            {agent.result && (
-              <ResultPanel result={agent.result} running={agent.running} reset={reset} />
+
+            {(agent.error || signOutError) && (
+              <div className="error-banner" role="alert">
+                <CircleAlert size={17} />
+                <span>{agent.error ?? signOutError}</span>
+                {agent.status !== "connected" && !agent.running && (
+                  <Button variant="outline" size="sm" onClick={agent.reconnect}>
+                    <RotateCw size={13} />
+                    Reconnect
+                  </Button>
+                )}
+              </div>
             )}
           </div>
-          <aside className="agent-sidebar">
-            <SpotlightCard theme="dark" spotlightColor="rgba(249, 87, 33, 0.15)" spotlightSize={240} className="!p-0 !bg-transparent !border-0">
-              <div className="sidebar-heading">
-                <h2>Agent workspace</h2>
-                <span className="small-tag">{mockMode ? "MOCK" : "LIVE"}</span>
-              </div>
-              <div className="agent-identity">
-                <span className="agent-avatar">
-                  <Zap size={21} fill="currentColor" strokeWidth={1.5} />
-                </span>
-                <div>
-                  <h3>TaskPilot agent</h3>
-                  <p>
-                    <span className={`status-dot ${agent.running ? "pulsing" : ""}`} />
-                    <DecryptedText
-                      text={
-                        agent.running
-                          ? "Working on your task..."
-                          : completed
-                            ? "Task completed"
-                            : agent.status === "connected"
-                              ? "Ready for your next task"
-                              : "Waiting for connection"
-                      }
-                      speed={35}
-                      sequential={true}
-                      animateOn="view"
-                    />
-                  </p>
-                </div>
-                <span className="identity-indicator">
-                  {completed ? <Check size={15} /> : <Sparkles size={16} />}
-                </span>
-              </div>
-              <div className="agent-stats">
-                <div>
-                  <span>
-                    <Clock3 size={14} />
-                    Elapsed
-                  </span>
-                  <strong>
-                    {String(Math.floor(elapsed / 60)).padStart(2, "0")}:
-                    {String(elapsed % 60).padStart(2, "0")}
-                  </strong>
-                </div>
-                <div>
-                  <span>
-                    <MousePointer2 size={14} />
-                    Actions
-                  </span>
-                  <strong>{actions.toString().padStart(2, "0")}</strong>
-                </div>
-                <div>
-                  <span>
-                    <Brain size={14} />
-                    Thinking
-                  </span>
-                  <strong>{thoughts.toString().padStart(2, "0")}</strong>
-                </div>
-              </div>
-              <div className="browser-status">
-                <span className="browser-status-icon">
-                  <Globe2 size={18} />
-                </span>
-                <div>
-                  <span>{mockMode ? "Simulated browser" : "Browser connection"}</span>
-                  <p>
-                    {agent.running
-                      ? "Task in progress"
-                      : completed
-                        ? "Run finished"
-                        : "Awaiting a task"}
-                  </p>
-                </div>
-                <span className={`status-dot ${agent.status !== "connected" ? "dot-muted" : ""}`} />
-              </div>
-              <div className="sidebar-separator" />
-              <div className="run-details">
-                <span className="sidebar-eyebrow">THIS SESSION</span>
-                <div>
-                  <span>Environment</span>
-                  <span>{mockMode ? "Mock demo" : "Browser agent"}</span>
-                </div>
-                <div>
-                  <span>Connection</span>
-                  <span className={`connection-value is-${agent.status}`}>
-                    {agent.status === "connected"
-                      ? "Connected"
-                      : agent.status === "reconnecting"
-                        ? "Reconnecting"
-                        : "Disconnected"}
-                  </span>
-                </div>
-                <div>
-                  <span>Execution</span>
-                  <span>
-                    {agent.running
-                      ? "In progress"
-                      : completed
-                        ? "Completed"
-                        : agent.task
-                          ? "Stopped"
-                          : "Not started"}
-                  </span>
-                </div>
-              </div>
-              <div className="sidebar-separator" />
-              <Button
-                variant="ghost"
-                className="profile-shortcut"
-                onClick={() => setProfileOpen(true)}
+
+          <div className="hero-scroll-cue-wrap">
+            <motion.button
+              type="button"
+              onClick={scrollToLive}
+              className="hero-scroll-cue"
+              animate={{ y: [0, 5, 0] }}
+              transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
+              aria-label="Scroll to live activity"
+            >
+              <span className="scroll-cue-pulse" />
+              <span>Scroll for live activity & agent workspace</span>
+              <ChevronDown size={14} className="text-[#f95721]" />
+            </motion.button>
+          </div>
+        </section>
+
+        {/* ======================================================== */}
+        {/* SECTION 2: LIVE ACTIVITY & AGENT WORKSPACE (On scroll)    */}
+        {/* ======================================================== */}
+        <motion.section
+          ref={liveSectionRef}
+          id="live-workspace-section"
+          initial={{ opacity: 0, y: 50 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: false, amount: 0.12 }}
+          transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
+          className="live-workspace-section"
+        >
+          <div className="section-divider-banner">
+            <div className="section-badge-pill">
+              <span className={`live-pulse-dot ${agent.running ? "is-running" : ""}`} />
+              <span>LIVE EXECUTION & AGENT WORKSPACE</span>
+            </div>
+            <div className="section-badge-line" />
+          </div>
+
+          <div className="workspace-grid">
+            <div className="main-column">
+              <StepFeed
+                steps={agent.steps}
+                running={agent.running}
+                task={agent.task}
+                completed={completed}
+              />
+            </div>
+            <aside className="agent-sidebar">
+              <SpotlightCard
+                theme="dark"
+                spotlightColor="rgba(249, 87, 33, 0.15)"
+                spotlightSize={240}
+                className="!p-0 !bg-transparent !border-0"
               >
-                <span className="profile-shortcut-icon">
-                  <UserRound size={16} />
-                </span>
-                <span>
-                  <strong>Autofill profile</strong>
-                  <small>
-                    {profile.profile.name ? profile.profile.name : "Your details, when you need them"}
-                  </small>
-                </span>
-                <ArrowUpRight size={15} />
-              </Button>
-              <div className="sidebar-security">
-                <ShieldCheck size={14} />
-                <span>
-                  {mockMode ? "Sample data. Real-time experience." : "Your profile is yours alone."}
-                </span>
+                <div className="sidebar-heading">
+                  <h2>Agent workspace</h2>
+                  <span className="small-tag">{mockMode ? "MOCK" : "LIVE"}</span>
+                </div>
+                <div className="agent-identity">
+                  <span className="agent-avatar">
+                    <Zap size={21} fill="currentColor" strokeWidth={1.5} />
+                  </span>
+                  <div>
+                    <h3>TaskPilot agent</h3>
+                    <p>
+                      <span className={`status-dot ${agent.running ? "pulsing" : ""}`} />
+                      <DecryptedText
+                        text={
+                          agent.running
+                            ? "Working on your task..."
+                            : completed
+                              ? "Task completed"
+                              : agent.status === "connected"
+                                ? "Ready for your next task"
+                                : "Waiting for connection"
+                        }
+                        speed={35}
+                        sequential={true}
+                        animateOn="view"
+                      />
+                    </p>
+                  </div>
+                  <span className="identity-indicator">
+                    {completed ? <Check size={15} /> : <Sparkles size={16} />}
+                  </span>
+                </div>
+                <div className="agent-stats">
+                  <div>
+                    <span>
+                      <Clock3 size={14} />
+                      Elapsed
+                    </span>
+                    <strong>
+                      {String(Math.floor(elapsed / 60)).padStart(2, "0")}:
+                      {String(elapsed % 60).padStart(2, "0")}
+                    </strong>
+                  </div>
+                  <div>
+                    <span>
+                      <MousePointer2 size={14} />
+                      Actions
+                    </span>
+                    <strong>{actions.toString().padStart(2, "0")}</strong>
+                  </div>
+                  <div>
+                    <span>
+                      <Brain size={14} />
+                      Thinking
+                    </span>
+                    <strong>{thoughts.toString().padStart(2, "0")}</strong>
+                  </div>
+                </div>
+                <div className="browser-status">
+                  <span className="browser-status-icon">
+                    <Globe2 size={18} />
+                  </span>
+                  <div>
+                    <span>{mockMode ? "Simulated browser" : "Browser connection"}</span>
+                    <p>
+                      {agent.running
+                        ? "Task in progress"
+                        : completed
+                          ? "Run finished"
+                          : "Awaiting a task"}
+                    </p>
+                  </div>
+                  <span className={`status-dot ${agent.status !== "connected" ? "dot-muted" : ""}`} />
+                </div>
+                <div className="sidebar-separator" />
+                <div className="run-details">
+                  <span className="sidebar-eyebrow">THIS SESSION</span>
+                  <div>
+                    <span>Environment</span>
+                    <span>{mockMode ? "Mock demo" : "Browser agent"}</span>
+                  </div>
+                  <div>
+                    <span>Connection</span>
+                    <span className={`connection-value is-${agent.status}`}>
+                      {agent.status === "connected"
+                        ? "Connected"
+                        : agent.status === "reconnecting"
+                          ? "Reconnecting"
+                          : "Disconnected"}
+                    </span>
+                  </div>
+                  <div>
+                    <span>Execution</span>
+                    <span>
+                      {agent.running
+                        ? "In progress"
+                        : completed
+                          ? "Completed"
+                          : agent.task
+                            ? "Stopped"
+                            : "Not started"}
+                    </span>
+                  </div>
+                </div>
+                <div className="sidebar-separator" />
+                <Button
+                  variant="ghost"
+                  className="profile-shortcut"
+                  onClick={() => setProfileOpen(true)}
+                >
+                  <span className="profile-shortcut-icon">
+                    <UserRound size={16} />
+                  </span>
+                  <span>
+                    <strong>Autofill profile</strong>
+                    <small>
+                      {profile.profile.name ? profile.profile.name : "Your details, when you need them"}
+                    </small>
+                  </span>
+                  <ArrowUpRight size={15} />
+                </Button>
+                <div className="sidebar-security">
+                  <ShieldCheck size={14} />
+                  <span>
+                    {mockMode ? "Sample data. Real-time experience." : "Your profile is yours alone."}
+                  </span>
+                </div>
+              </SpotlightCard>
+            </aside>
+          </div>
+
+          <div className="section-advance-cue">
+            <button
+              type="button"
+              onClick={scrollToResult}
+              className="advance-cue-btn"
+            >
+              <span>View synthesized results below</span>
+              <ChevronDown size={13} />
+            </button>
+          </div>
+        </motion.section>
+
+        {/* ======================================================== */}
+        {/* SECTION 3: RESULT SECTION (At last, with animations)     */}
+        {/* ======================================================== */}
+        <motion.section
+          ref={resultSectionRef}
+          id="result-section"
+          initial={{ opacity: 0, y: 50 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: false, amount: 0.12 }}
+          transition={{ duration: 0.75, ease: [0.16, 1, 0.3, 1] }}
+          className="result-workspace-section"
+        >
+          <div className="section-divider-banner">
+            <div className="section-badge-pill section-badge-pill--result">
+              <Sparkles size={13} className="text-[#f95721]" />
+              <span>TASK OUTCOME & SYNTHESIZED RESULT</span>
+            </div>
+            <div className="section-badge-line" />
+          </div>
+
+          {agent.result ? (
+            <div className="result-full-wrapper">
+              <ResultPanel result={agent.result} running={agent.running} reset={reset} />
+            </div>
+          ) : (
+            <div className="result-standby-card">
+              <div className="standby-header">
+                <div className="standby-icon-wrap">
+                  <Sparkles size={20} className="text-[#f95721]" />
+                </div>
+                <div>
+                  <h4>Awaiting Task Output</h4>
+                  <p>
+                    Run a task above to generate extracted price comparisons, web research matrices, or automated form results.
+                  </p>
+                </div>
               </div>
-            </SpotlightCard>
-          </aside>
-        </div>
+              <div className="standby-actions">
+                <button
+                  type="button"
+                  onClick={scrollToTop}
+                  className="scroll-top-link"
+                >
+                  <ArrowUp size={13} /> Return to Task Input
+                </button>
+              </div>
+            </div>
+          )}
+        </motion.section>
+
         <footer className="workspace-footer">
           <span>
             <span className="footer-mark">
