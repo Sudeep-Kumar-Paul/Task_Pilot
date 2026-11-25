@@ -65,12 +65,10 @@ export function LoginPage() {
     <div className="login-page">
       <header className="login-header">
         <Brand />
-        {mockMode && (
-          <Button variant="ghost" size="sm" onClick={() => navigate({ to: "/" })}>
-            Back to demo
-            <ArrowRight size={14} />
-          </Button>
-        )}
+        <Button variant="ghost" size="sm" onClick={() => navigate({ to: "/" })}>
+          Back to demo
+          <ArrowRight size={14} />
+        </Button>
       </header>
       <main className="login-main">
         <span className="login-symbol">

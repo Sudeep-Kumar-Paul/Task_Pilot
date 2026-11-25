@@ -12,6 +12,8 @@ import {
 import { useRef, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { EXAMPLES } from "@/lib/taskpilot/protocol";
+import ShinyText from "@/components/bits/ShinyText/ShinyText";
+import SpotlightCard from "@/components/bits/SpotlightCard/SpotlightCard";
 export function TaskInput({
   value,
   onChange,
@@ -79,8 +81,8 @@ export function TaskInput({
                 <Square size={13} fill="currentColor" /> Stop task
               </Button>
             ) : (
-              <Button type="submit" disabled={!value.trim() || !connected}>
-                <span>Run task</span>
+              <Button type="submit" disabled={!value.trim() || !connected} className="shadow-lg shadow-[#f95721]/20 hover:shadow-[#f95721]/30 transition-all">
+                <ShinyText text="Run task" speed={2.5} shineColor="#ffffff" color="inherit" />
                 <ArrowUp size={16} />
               </Button>
             )}
@@ -98,22 +100,29 @@ export function TaskInput({
           {EXAMPLES.map((example) => {
             const Icon = icons[example.icon];
             return (
-              <Button
+              <SpotlightCard
                 key={example.id}
-                variant="outline"
-                size="sm"
-                disabled={running}
-                className={value === example.task ? "example-selected" : ""}
-                onClick={() => {
-                  onChange(example.task);
-                  input.current?.focus();
-                }}
-                title={example.task}
+                theme="dark"
+                spotlightColor="rgba(249, 87, 33, 0.22)"
+                spotlightSize={120}
+                className="!bg-transparent !p-0 !border-0 rounded-[7px] overflow-hidden"
               >
-                <Icon size={14} />
-                {example.title}
-                <span className="example-arrow">↗</span>
-              </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={running}
+                  className={`w-full transition-all duration-200 ${value === example.task ? "example-selected ring-1 ring-[#f95721]" : "hover:border-[#f95721]/40"}`}
+                  onClick={() => {
+                    onChange(example.task);
+                    input.current?.focus();
+                  }}
+                  title={example.task}
+                >
+                  <Icon size={14} className="text-[#f95721]" />
+                  <span>{example.title}</span>
+                  <span className="example-arrow text-slate-400 group-hover:text-white">↗</span>
+                </Button>
+              </SpotlightCard>
             );
           })}
         </div>

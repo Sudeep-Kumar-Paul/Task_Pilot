@@ -2,14 +2,16 @@ import { ArrowUpRight, ChevronDown, LogOut, Radio, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { mockMode } from "@/firebase";
 import type { ConnectionStatus } from "@/hooks/useTaskSocket";
+import ShinyText from "@/components/bits/ShinyText/ShinyText";
+
 export function Brand() {
   return (
     <span className="brand">
       <span className="brand-symbol">
         <Zap fill="currentColor" size={19} strokeWidth={1.5} />
       </span>
-      <span>
-        TaskPilot<span className="brand-period">.</span>
+      <span className="font-extrabold tracking-tight">
+        TaskPilot<span className="brand-period text-[#f95721]">.</span>
       </span>
     </span>
   );
@@ -44,7 +46,7 @@ export function Header({
                 ? "Reconnecting"
                 : "Disconnected"}
           </span>
-          {mockMode ? (
+          {mockMode || !email ? (
             <>
               <span className="demo-tag">
                 <Radio size={12} /> Demo mode

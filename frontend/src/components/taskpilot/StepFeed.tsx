@@ -14,6 +14,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { mockMode } from "@/firebase";
+import { useAuth } from "@/hooks/useAuth";
 import type { FeedStep } from "@/lib/taskpilot/protocol";
 const kinds = {
   thinking: { icon: Brain, title: "Thinking" },
@@ -76,6 +77,7 @@ export function StepFeed({
   task: string;
   completed: boolean;
 }) {
+  const { user } = useAuth();
   const scroll = useRef<HTMLDivElement>(null);
   const shouldFollow = useRef(true);
   const [follow, setFollow] = useState(true);
@@ -200,7 +202,7 @@ export function StepFeed({
       <div className="feed-footer">
         <span>
           <span className="privacy-dot" />{" "}
-          {mockMode
+          {mockMode || !user
             ? "Mock agent · No websites accessed"
             : "Private session · Firebase authenticated"}
         </span>

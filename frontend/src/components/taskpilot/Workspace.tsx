@@ -28,6 +28,8 @@ import { TaskInput } from "./TaskInput";
 import { StepFeed } from "./StepFeed";
 import { ResultPanel } from "./ResultPanel";
 import { ProfilePanel } from "./ProfilePanel";
+import DecryptedText from "@/components/bits/DecryptedText/DecryptedText";
+import SpotlightCard from "@/components/bits/SpotlightCard/SpotlightCard";
 export function Workspace() {
   const { user, loading, error: authIssue } = useAuth();
   const agent = useTaskSocket(user);
@@ -38,9 +40,7 @@ export function Workspace() {
   const [signOutError, setSignOutError] = useState<string | null>(null);
   const navigate = useNavigate();
   const router = useRouter();
-  useEffect(() => {
-    if (!mockMode && !loading && !user) void navigate({ to: "/auth", replace: true });
-  }, [user, loading, navigate]);
+  const isGuest = !user;
   useEffect(() => {
     if (!agent.running) return;
     setNow(Date.now());
@@ -59,10 +59,10 @@ export function Workspace() {
       setSignOutError("Could not sign out. Please try again.");
     }
   }
-  if (!mockMode && (loading || !user))
+  if (loading)
     return (
       <div className="session-loading">
-        <Loader2 size={25} className="spin" />
+        <Loader2 size={25} className="spin text-[#f95721]" />
         <p>{authIssue ?? "Opening your workspace…"}</p>
       </div>
     );
@@ -134,126 +134,135 @@ export function Workspace() {
             )}
           </div>
           <aside className="agent-sidebar">
-            <div className="sidebar-heading">
-              <h2>Agent workspace</h2>
-              <span className="small-tag">{mockMode ? "MOCK" : "LIVE"}</span>
-            </div>
-            <div className="agent-identity">
-              <span className="agent-avatar">
-                <Zap size={21} fill="currentColor" strokeWidth={1.5} />
-              </span>
-              <div>
-                <h3>TaskPilot agent</h3>
-                <p>
-                  <span className={`status-dot ${agent.running ? "pulsing" : ""}`} />
-                  {agent.running
-                    ? "Working on your task"
-                    : completed
-                      ? "Task completed"
-                      : agent.status === "connected"
-                        ? "Ready for your next task"
-                        : "Waiting for connection"}
-                </p>
+            <SpotlightCard theme="dark" spotlightColor="rgba(249, 87, 33, 0.15)" spotlightSize={240} className="!p-0 !bg-transparent !border-0">
+              <div className="sidebar-heading">
+                <h2>Agent workspace</h2>
+                <span className="small-tag">{mockMode ? "MOCK" : "LIVE"}</span>
               </div>
-              <span className="identity-indicator">
-                {completed ? <Check size={15} /> : <Sparkles size={16} />}
-              </span>
-            </div>
-            <div className="agent-stats">
-              <div>
+              <div className="agent-identity">
+                <span className="agent-avatar">
+                  <Zap size={21} fill="currentColor" strokeWidth={1.5} />
+                </span>
+                <div>
+                  <h3>TaskPilot agent</h3>
+                  <p>
+                    <span className={`status-dot ${agent.running ? "pulsing" : ""}`} />
+                    <DecryptedText
+                      text={
+                        agent.running
+                          ? "Working on your task..."
+                          : completed
+                            ? "Task completed"
+                            : agent.status === "connected"
+                              ? "Ready for your next task"
+                              : "Waiting for connection"
+                      }
+                      speed={35}
+                      sequential={true}
+                      animateOn="view"
+                    />
+                  </p>
+                </div>
+                <span className="identity-indicator">
+                  {completed ? <Check size={15} /> : <Sparkles size={16} />}
+                </span>
+              </div>
+              <div className="agent-stats">
+                <div>
+                  <span>
+                    <Clock3 size={14} />
+                    Elapsed
+                  </span>
+                  <strong>
+                    {String(Math.floor(elapsed / 60)).padStart(2, "0")}:
+                    {String(elapsed % 60).padStart(2, "0")}
+                  </strong>
+                </div>
+                <div>
+                  <span>
+                    <MousePointer2 size={14} />
+                    Actions
+                  </span>
+                  <strong>{actions.toString().padStart(2, "0")}</strong>
+                </div>
+                <div>
+                  <span>
+                    <Brain size={14} />
+                    Thinking
+                  </span>
+                  <strong>{thoughts.toString().padStart(2, "0")}</strong>
+                </div>
+              </div>
+              <div className="browser-status">
+                <span className="browser-status-icon">
+                  <Globe2 size={18} />
+                </span>
+                <div>
+                  <span>{mockMode ? "Simulated browser" : "Browser connection"}</span>
+                  <p>
+                    {agent.running
+                      ? "Task in progress"
+                      : completed
+                        ? "Run finished"
+                        : "Awaiting a task"}
+                  </p>
+                </div>
+                <span className={`status-dot ${agent.status !== "connected" ? "dot-muted" : ""}`} />
+              </div>
+              <div className="sidebar-separator" />
+              <div className="run-details">
+                <span className="sidebar-eyebrow">THIS SESSION</span>
+                <div>
+                  <span>Environment</span>
+                  <span>{mockMode ? "Mock demo" : "Browser agent"}</span>
+                </div>
+                <div>
+                  <span>Connection</span>
+                  <span className={`connection-value is-${agent.status}`}>
+                    {agent.status === "connected"
+                      ? "Connected"
+                      : agent.status === "reconnecting"
+                        ? "Reconnecting"
+                        : "Disconnected"}
+                  </span>
+                </div>
+                <div>
+                  <span>Execution</span>
+                  <span>
+                    {agent.running
+                      ? "In progress"
+                      : completed
+                        ? "Completed"
+                        : agent.task
+                          ? "Stopped"
+                          : "Not started"}
+                  </span>
+                </div>
+              </div>
+              <div className="sidebar-separator" />
+              <Button
+                variant="ghost"
+                className="profile-shortcut"
+                onClick={() => setProfileOpen(true)}
+              >
+                <span className="profile-shortcut-icon">
+                  <UserRound size={16} />
+                </span>
                 <span>
-                  <Clock3 size={14} />
-                  Elapsed
+                  <strong>Autofill profile</strong>
+                  <small>
+                    {profile.profile.name ? profile.profile.name : "Your details, when you need them"}
+                  </small>
                 </span>
-                <strong>
-                  {String(Math.floor(elapsed / 60)).padStart(2, "0")}:
-                  {String(elapsed % 60).padStart(2, "0")}
-                </strong>
-              </div>
-              <div>
+                <ArrowUpRight size={15} />
+              </Button>
+              <div className="sidebar-security">
+                <ShieldCheck size={14} />
                 <span>
-                  <MousePointer2 size={14} />
-                  Actions
-                </span>
-                <strong>{actions.toString().padStart(2, "0")}</strong>
-              </div>
-              <div>
-                <span>
-                  <Brain size={14} />
-                  Thinking
-                </span>
-                <strong>{thoughts.toString().padStart(2, "0")}</strong>
-              </div>
-            </div>
-            <div className="browser-status">
-              <span className="browser-status-icon">
-                <Globe2 size={18} />
-              </span>
-              <div>
-                <span>{mockMode ? "Simulated browser" : "Browser connection"}</span>
-                <p>
-                  {agent.running
-                    ? "Task in progress"
-                    : completed
-                      ? "Run finished"
-                      : "Awaiting a task"}
-                </p>
-              </div>
-              <span className={`status-dot ${agent.status !== "connected" ? "dot-muted" : ""}`} />
-            </div>
-            <div className="sidebar-separator" />
-            <div className="run-details">
-              <span className="sidebar-eyebrow">THIS SESSION</span>
-              <div>
-                <span>Environment</span>
-                <span>{mockMode ? "Mock demo" : "Browser agent"}</span>
-              </div>
-              <div>
-                <span>Connection</span>
-                <span className="connection-value">
-                  {agent.status === "connected"
-                    ? "Connected"
-                    : agent.status === "reconnecting"
-                      ? "Reconnecting"
-                      : "Disconnected"}
+                  {mockMode ? "Sample data. Real-time experience." : "Your profile is yours alone."}
                 </span>
               </div>
-              <div>
-                <span>Execution</span>
-                <span>
-                  {agent.running
-                    ? "In progress"
-                    : completed
-                      ? "Completed"
-                      : agent.task
-                        ? "Stopped"
-                        : "Not started"}
-                </span>
-              </div>
-            </div>
-            <div className="sidebar-separator" />
-            <Button
-              variant="ghost"
-              className="profile-shortcut"
-              onClick={() => setProfileOpen(true)}
-            >
-              <span className="profile-shortcut-icon">
-                <UserRound size={16} />
-              </span>
-              <span>
-                <strong>Autofill profile</strong>
-                <small>
-                  {profile.profile.name ? profile.profile.name : "Your details, when you need them"}
-                </small>
-              </span>
-              <ArrowUpRight size={15} />
-            </Button>
-            <div className="sidebar-security">
-              <ShieldCheck size={14} />
-              <span>
-                {mockMode ? "Sample data. Real-time experience." : "Your profile is yours alone."}
-              </span>
-            </div>
+            </SpotlightCard>
           </aside>
         </div>
         <footer className="workspace-footer">
