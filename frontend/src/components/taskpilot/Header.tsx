@@ -2,18 +2,25 @@ import { ArrowUpRight, ChevronDown, LogOut, Radio, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { mockMode } from "@/firebase";
 import type { ConnectionStatus } from "@/hooks/useTaskSocket";
+import { useIntro } from "@/context/IntroContext";
 import ShinyText from "@/components/bits/ShinyText/ShinyText";
 
 export function Brand() {
+  const { replayIntro } = useIntro();
   return (
-    <span className="brand">
+    <button
+      type="button"
+      onClick={replayIntro}
+      title="Replay Task Pilot intro animation"
+      className="brand bg-transparent border-0 p-0 cursor-pointer text-inherit hover:opacity-90 transition-opacity"
+    >
       <span className="brand-symbol">
         <Zap fill="currentColor" size={19} strokeWidth={1.5} />
       </span>
       <span className="font-extrabold tracking-tight">
         TaskPilot<span className="brand-period text-[#f95721]">.</span>
       </span>
-    </span>
+    </button>
   );
 }
 export function Header({
