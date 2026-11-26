@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useCallback, useEffect, useRef } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { AuthProvider } from "./hooks/useAuth";
 import { RouterProvider, useCurrentRoute } from "./context/RouterContext";
@@ -13,6 +13,13 @@ import "./styles.css";
 
 function IntroOverlay() {
   const { showIntro, manualReplay, dismissIntro } = useIntro();
+  const gatherTimerRef = useRef(null);
+
+  const handleGathered = useCallback(() => {
+    if (manualReplay) return;
+    if (gatherTimerRef.current) window.clearTimeout(gatherTimerRef.current);
+    gatherTimerRef.current = window.setTimeout(dismissIntro, 1000);
+  }, [manualReplay, dismissIntro]);
 
   useEffect(() => {
     if (!showIntro) return;
@@ -36,17 +43,18 @@ function IntroOverlay() {
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("wheel", onWheel, { passive: true });
 
-    let timer;
+    let fallbackTimer;
     if (!manualReplay) {
       const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-      timer = window.setTimeout(dismissIntro, reduced ? 2200 : 5800);
+      fallbackTimer = window.setTimeout(dismissIntro, reduced ? 1000 : 6200);
     }
 
     return () => {
       document.body.style.overflow = prevOverflow;
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("wheel", onWheel);
-      if (timer) window.clearTimeout(timer);
+      if (fallbackTimer) window.clearTimeout(fallbackTimer);
+      if (gatherTimerRef.current) window.clearTimeout(gatherTimerRef.current);
     };
   }, [showIntro, manualReplay, dismissIntro]);
 
@@ -58,7 +66,7 @@ function IntroOverlay() {
           initial={{ opacity: 1 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0, scale: 1.02, filter: "blur(6px)" }}
-          transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
+          transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
           onClick={dismissIntro}
           className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#0c0c0e] cursor-pointer select-none"
           role="dialog"
@@ -66,29 +74,21 @@ function IntroOverlay() {
           aria-label="Task Pilot welcome animation"
         >
           <div className="w-full max-w-5xl px-4">
-            <ParticleTitle text="Task Pilot" />
+            <ParticleTitle text="Task Pilot" onGathered={handleGathered} />
           </div>
 
           <motion.div
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.45, duration: 0.6 }}
-            className="mt-2 flex flex-col items-center gap-3"
+            className="mt-2 flex flex-col items-center gap-2"
           >
-            <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-zinc-500">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[#f95721]/80">
               Your browser, on autopilot
             </span>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                dismissIntro();
-              }}
-              className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-1.5 text-xs font-medium text-zinc-300 backdrop-blur-md transition hover:border-[#f95721]/40 hover:bg-[#f95721]/10 hover:text-white"
-            >
-              <span>{manualReplay ? "Return to workspace" : "Enter workspace"}</span>
-              <span className="text-[#f95721]">→</span>
-            </button>
+            {manualReplay && (
+              <span className="text-[11px] text-zinc-500">Click anywhere to return</span>
+            )}
           </motion.div>
 
           {!manualReplay && (
@@ -96,7 +96,7 @@ function IntroOverlay() {
               <motion.div
                 initial={{ scaleX: 0 }}
                 animate={{ scaleX: 1 }}
-                transition={{ duration: 5.8, ease: "linear" }}
+                transition={{ duration: 4.86, ease: "linear" }}
                 style={{ transformOrigin: "left" }}
                 className="h-full w-full bg-gradient-to-r from-[#f95721]/40 via-[#f95721] to-[#f95721]/60"
               />

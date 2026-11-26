@@ -26,12 +26,12 @@ const LIGHT: Palette = {
   ],
 };
 const DARK: Palette = {
-  ink: [244, 244, 246],
+  ink: [255, 110, 42],
   page: [12, 12, 14],
   blobs: [
-    { rgb: [86, 112, 160], a: 0.5, fx: 0.04, fy: 0.08, fw: 0.62, fh: 0.78 },
-    { rgb: [140, 130, 190], a: 0.28, fx: 0.44, fy: 0.22, fw: 0.54, fh: 0.7 },
-    { rgb: [150, 104, 84], a: 0.34, fx: 0.3, fy: 0.44, fw: 0.44, fh: 0.56 },
+    { rgb: [249, 87, 33], a: 0.44, fx: 0.04, fy: 0.08, fw: 0.62, fh: 0.78 },
+    { rgb: [255, 148, 62], a: 0.34, fx: 0.44, fy: 0.22, fw: 0.54, fh: 0.7 },
+    { rgb: [198, 56, 16], a: 0.4, fx: 0.3, fy: 0.44, fw: 0.44, fh: 0.56 },
   ],
 };
 
@@ -155,7 +155,12 @@ type Engine = { setActive: (on: boolean) => void; resize: () => void; destroy: (
 const INTRO_LEAD = 0.08;
 const FONT_STACK = 'Inter,"PingFang SC","Microsoft YaHei",system-ui,sans-serif';
 
-function createEngine(cv: HTMLCanvasElement, text: string, pal: Palette): Engine | null {
+function createEngine(
+  cv: HTMLCanvasElement,
+  text: string,
+  pal: Palette,
+  onGathered?: () => void,
+): Engine | null {
   const ctx = cv.getContext("2d");
   if (!ctx) return null;
   const textCv = document.createElement("canvas");
@@ -225,8 +230,17 @@ function createEngine(cv: HTMLCanvasElement, text: string, pal: Palette): Engine
 
   function drawRealText() {
     const c = ctx as CanvasRenderingContext2D;
-    c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, cv.width, cv.height);
-    c.globalAlpha = 1; c.drawImage(textCv, 0, 0); c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    c.clearRect(0, 0, cv.width, cv.height);
+    c.save();
+    c.globalAlpha = 1;
+    c.shadowColor = "rgba(249, 87, 33, 0.9)";
+    c.shadowBlur = 22 * dpr;
+    c.drawImage(textCv, 0, 0);
+    c.shadowBlur = 0;
+    c.drawImage(textCv, 0, 0);
+    c.restore();
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
   function frame(now: number) {
@@ -264,7 +278,13 @@ function createEngine(cv: HTMLCanvasElement, text: string, pal: Palette): Engine
   function enter(next: Phase) {
     phase = next; phaseStart = performance.now(); stopWork();
     if (!active || destroyed) return;
-    if (next === "text") { intro = false; drawRealText(); timer = window.setTimeout(advance, TIMING.hold); }
+    if (next === "text") {
+      const firstGather = intro;
+      intro = false;
+      drawRealText();
+      if (firstGather) onGathered?.();
+      timer = window.setTimeout(advance, TIMING.hold);
+    }
     else if (next === "field") {
       ctx!.setTransform(1, 0, 0, 1, 0, 0); ctx!.clearRect(0, 0, cv.width, cv.height); ctx!.setTransform(dpr, 0, 0, dpr, 0, 0);
       timer = window.setTimeout(advance, TIMING.field);
@@ -346,6 +366,8 @@ export interface ParticleTitleProps {
   /** Title text. The real <h2> stays in the DOM for screen readers. */
   text?: string;
   className?: string;
+  /** Called once when the initial particle gather finishes and crisp text appears. */
+  onGathered?: () => void;
 }
 
 /**
@@ -353,16 +375,22 @@ export interface ParticleTitleProps {
  * Six dissolve styles rotate. Adapts to light and dark themes, pauses when off-screen or when the tab
  * is hidden, and shows plain text when prefers-reduced-motion is set.
  */
-export function ParticleTitle({ text = "What will you create today?", className = "" }: ParticleTitleProps) {
+export function ParticleTitle({
+  text = "What will you create today?",
+  className = "",
+  onGathered,
+}: ParticleTitleProps) {
   const reduce = usePrefersReducedMotion();
   const dark = useIsDark();
   const pal = dark ? DARK : LIGHT;
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const onGatheredRef = useRef(onGathered);
+  onGatheredRef.current = onGathered;
 
   useEffect(() => {
     const cv = canvasRef.current;
     if (reduce || !cv) return;
-    const engine = createEngine(cv, text, dark ? DARK : LIGHT);
+    const engine = createEngine(cv, text, dark ? DARK : LIGHT, () => onGatheredRef.current?.());
     if (!engine) return;
     let visible = true;
     let size = `${cv.clientWidth}x${cv.clientHeight}`;
@@ -413,7 +441,17 @@ export function ParticleTitle({ text = "What will you create today?", className 
         ))}
       </div>
 
-      {!reduce && <canvas ref={canvasRef} aria-hidden="true" className="pointer-events-none absolute inset-0 h-full w-full" />}
+      {!reduce && (
+        <canvas
+          ref={canvasRef}
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 h-full w-full"
+          style={{
+            filter:
+              "drop-shadow(0 0 10px rgba(249, 87, 33, 0.85)) drop-shadow(0 0 26px rgba(255, 120, 45, 0.5))",
+          }}
+        />
+      )}
 
       <h2
         className={
@@ -421,7 +459,15 @@ export function ParticleTitle({ text = "What will you create today?", className 
             ? "relative z-10 m-0 px-6 text-center text-3xl font-medium"
             : "absolute m-[-1px] h-px w-px overflow-hidden whitespace-nowrap border-0 p-0 [clip:rect(0,0,0,0)]"
         }
-        style={{ color: css(pal.ink, 0.95) }}
+        style={{
+          color: css(pal.ink, 0.98),
+          ...(reduce
+            ? {
+                textShadow:
+                  "0 0 18px rgba(249, 87, 33, 0.85), 0 0 42px rgba(255, 120, 45, 0.45)",
+              }
+            : {}),
+        }}
       >
         {text}
       </h2>
