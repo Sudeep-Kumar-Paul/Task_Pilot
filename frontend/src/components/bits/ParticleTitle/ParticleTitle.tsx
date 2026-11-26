@@ -27,11 +27,11 @@ const LIGHT: Palette = {
 };
 const DARK: Palette = {
   ink: [255, 110, 42],
-  page: [12, 12, 14],
+  page: [0, 0, 0],
   blobs: [
-    { rgb: [249, 87, 33], a: 0.44, fx: 0.04, fy: 0.08, fw: 0.62, fh: 0.78 },
-    { rgb: [255, 148, 62], a: 0.34, fx: 0.44, fy: 0.22, fw: 0.54, fh: 0.7 },
-    { rgb: [198, 56, 16], a: 0.4, fx: 0.3, fy: 0.44, fw: 0.44, fh: 0.56 },
+    { rgb: [249, 87, 33], a: 0.24, fx: 0.04, fy: 0.08, fw: 0.62, fh: 0.78 },
+    { rgb: [255, 148, 62], a: 0.16, fx: 0.44, fy: 0.22, fw: 0.54, fh: 0.7 },
+    { rgb: [198, 56, 16], a: 0.2, fx: 0.3, fy: 0.44, fw: 0.44, fh: 0.56 },
   ],
 };
 
@@ -153,7 +153,7 @@ const rgbStr = (a: RGB, b: RGB, t: number) => {
 type Engine = { setActive: (on: boolean) => void; resize: () => void; destroy: () => void };
 
 const INTRO_LEAD = 0.08;
-const FONT_STACK = 'Inter,"PingFang SC","Microsoft YaHei",system-ui,sans-serif';
+const FONT_STACK = '"Syne", "Space Grotesk", system-ui, sans-serif';
 
 function createEngine(
   cv: HTMLCanvasElement,
@@ -183,19 +183,19 @@ function createEngine(
     cv.width = Math.max(1, Math.round(W * dpr)); cv.height = Math.max(1, Math.round(H * dpr));
     textCv.width = cv.width; textCv.height = cv.height;
     ctx!.setTransform(1, 0, 0, 1, 0, 0);
-    const fs = W >= 1100 ? 38 : Math.max(26, Math.min(38, W * 0.05));
+    const fs = W >= 1100 ? 74 : Math.max(38, Math.min(74, W * 0.085));
     const ty = H / 2;
     box = { x: 0, y: 0, w: W, h: H };
-    field = { cx: W / 2, cy: H / 2, rx: Math.min(560, W * 0.4), ry: Math.min(260, H * 0.3) };
+    field = { cx: W / 2, cy: H / 2, rx: Math.min(620, W * 0.44), ry: Math.min(250, H * 0.34) };
     const o = textCv.getContext("2d") as CanvasRenderingContext2D;
     o.setTransform(dpr, 0, 0, dpr, 0, 0); o.clearRect(0, 0, W, H);
-    o.font = `500 ${fs}px ${FONT_STACK}`; o.textAlign = "center"; o.textBaseline = "middle";
+    o.font = `700 ${fs}px ${FONT_STACK}`; o.textAlign = "center"; o.textBaseline = "middle";
     const m = o.measureText(text);
     const tx = W / 2 - (m.actualBoundingBoxRight - m.actualBoundingBoxLeft) / 2;
-    o.fillStyle = `rgba(${pal.ink.join(",")},.95)`; o.fillText(text, tx, ty);
+    o.fillStyle = `rgba(${pal.ink.join(",")},.98)`; o.fillText(text, tx, ty);
     const tw = m.width;
-    const X0 = Math.max(0, Math.floor((tx - tw / 2 - 6) * dpr)), X1 = Math.min(cv.width, Math.ceil((tx + tw / 2 + 6) * dpr));
-    const Y0 = Math.max(0, Math.floor((ty - fs) * dpr)), Y1 = Math.min(cv.height, Math.ceil((ty + fs) * dpr));
+    const X0 = Math.max(0, Math.floor((tx - tw / 2 - 20) * dpr)), X1 = Math.min(cv.width, Math.ceil((tx + tw / 2 + 20) * dpr));
+    const Y0 = Math.max(0, Math.floor((ty - fs * 0.95) * dpr)), Y1 = Math.min(cv.height, Math.ceil((ty + fs * 0.95) * dpr));
     const d = o.getImageData(0, 0, cv.width, cv.height).data;
     let cs = Math.max(2, Math.round(3 * dpr));
     let pts: number[][];
@@ -390,33 +390,52 @@ export function ParticleTitle({
   useEffect(() => {
     const cv = canvasRef.current;
     if (reduce || !cv) return;
-    const engine = createEngine(cv, text, dark ? DARK : LIGHT, () => onGatheredRef.current?.());
-    if (!engine) return;
-    let visible = true;
-    let size = `${cv.clientWidth}x${cv.clientHeight}`;
-    const sync = () => engine.setActive(visible && !document.hidden);
-    const io = new IntersectionObserver((entries) => {
-      visible = entries[entries.length - 1].isIntersecting;
+    let cancelled = false;
+    let teardown: (() => void) | undefined;
+
+    const boot = async () => {
+      if (document.fonts) {
+        await Promise.race([
+          document.fonts.load('700 74px "Syne"', text),
+          new Promise((r) => window.setTimeout(r, 800)),
+        ]).catch(() => {});
+      }
+      if (cancelled) return;
+      const engine = createEngine(cv, text, dark ? DARK : LIGHT, () => onGatheredRef.current?.());
+      if (!engine) return;
+      let visible = true;
+      let size = `${cv.clientWidth}x${cv.clientHeight}`;
+      const sync = () => engine.setActive(visible && !document.hidden);
+      const io = new IntersectionObserver((entries) => {
+        visible = entries[entries.length - 1].isIntersecting;
+        sync();
+      });
+      io.observe(cv);
+      let rz = 0;
+      const ro = new ResizeObserver(() => {
+        const next = `${cv.clientWidth}x${cv.clientHeight}`;
+        if (next === size) return;
+        size = next;
+        clearTimeout(rz);
+        rz = window.setTimeout(() => engine.resize(), 200);
+      });
+      ro.observe(cv);
+      document.addEventListener("visibilitychange", sync);
       sync();
-    });
-    io.observe(cv);
-    let rz = 0;
-    const ro = new ResizeObserver(() => {
-      const next = `${cv.clientWidth}x${cv.clientHeight}`;
-      if (next === size) return;
-      size = next;
-      clearTimeout(rz);
-      rz = window.setTimeout(() => engine.resize(), 200);
-    });
-    ro.observe(cv);
-    document.addEventListener("visibilitychange", sync);
-    sync();
+      teardown = () => {
+        document.removeEventListener("visibilitychange", sync);
+        clearTimeout(rz);
+        io.disconnect();
+        ro.disconnect();
+        engine.destroy();
+      };
+    };
+
+    void boot();
+
     return () => {
-      document.removeEventListener("visibilitychange", sync);
-      clearTimeout(rz);
-      io.disconnect();
-      ro.disconnect();
-      engine.destroy();
+      cancelled = true;
+      teardown?.();
     };
   }, [reduce, dark, text]);
 
@@ -456,11 +475,12 @@ export function ParticleTitle({
       <h2
         className={
           reduce
-            ? "relative z-10 m-0 px-6 text-center text-3xl font-medium"
+            ? "relative z-10 m-0 px-6 text-center text-4xl md:text-6xl font-bold tracking-tight"
             : "absolute m-[-1px] h-px w-px overflow-hidden whitespace-nowrap border-0 p-0 [clip:rect(0,0,0,0)]"
         }
         style={{
           color: css(pal.ink, 0.98),
+          fontFamily: FONT_STACK,
           ...(reduce
             ? {
                 textShadow:

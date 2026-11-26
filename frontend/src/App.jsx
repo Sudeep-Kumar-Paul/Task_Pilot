@@ -9,6 +9,10 @@ import ClickSpark from "./components/bits/ClickSpark/ClickSpark";
 import DotField from "./components/bits/DotField/DotField";
 import Waves from "./components/bits/Waves/Waves";
 import ParticleTitle from "./components/bits/ParticleTitle/ParticleTitle";
+import CursorGrid from "./components/bits/CursorGrid/CursorGrid";
+import "@fontsource/syne/latin-700.css";
+import "@fontsource/syne/latin-800.css";
+import "@fontsource/space-grotesk/latin-600.css";
 import "./styles.css";
 
 function IntroOverlay() {
@@ -67,13 +71,31 @@ function IntroOverlay() {
           animate={{ opacity: 1 }}
           exit={{ opacity: 0, scale: 1.02, filter: "blur(6px)" }}
           transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-          onClick={dismissIntro}
-          className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#0c0c0e] cursor-pointer select-none"
+          onClick={manualReplay ? dismissIntro : undefined}
+          className={`fixed inset-0 z-50 flex flex-col items-center justify-center bg-[#000000] select-none ${manualReplay ? "cursor-pointer" : "cursor-crosshair"}`}
           role="dialog"
           aria-modal="true"
           aria-label="Task Pilot welcome animation"
         >
-          <div className="w-full max-w-5xl px-4">
+          {/* Pitch-black interactive grid backdrop */}
+          <div className="pointer-events-none absolute inset-0 z-0">
+            <CursorGrid
+              color="#f95721"
+              gridColor="#27272a"
+              cellSize={54}
+              radius={190}
+              fillOpacity={0.18}
+              gridOpacity={0.18}
+              maxOpacity={0.95}
+              spotlight={0.55}
+              ambient={0.25}
+              clickPulse={true}
+              gridStyle="lines"
+              edgeFade={0.22}
+            />
+          </div>
+
+          <div className="relative z-10 w-full max-w-5xl px-4 pointer-events-none">
             <ParticleTitle text="Task Pilot" onGathered={handleGathered} />
           </div>
 
@@ -81,18 +103,19 @@ function IntroOverlay() {
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.45, duration: 0.6 }}
-            className="mt-2 flex flex-col items-center gap-2"
+            className="relative z-10 mt-1 flex flex-col items-center gap-2 pointer-events-none"
+            style={{ fontFamily: '"Space Grotesk", system-ui, sans-serif' }}
           >
-            <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-[#f95721]/80">
+            <span className="text-[11px] font-semibold uppercase tracking-[0.28em] text-[#f95721]/85">
               Your browser, on autopilot
             </span>
             {manualReplay && (
-              <span className="text-[11px] text-zinc-500">Click anywhere to return</span>
+              <span className="text-[11px] text-zinc-500">Click anywhere or press Esc to return</span>
             )}
           </motion.div>
 
           {!manualReplay && (
-            <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-white/5 overflow-hidden">
+            <div className="absolute bottom-0 left-0 right-0 z-10 h-[2px] bg-white/5 overflow-hidden pointer-events-none">
               <motion.div
                 initial={{ scaleX: 0 }}
                 animate={{ scaleX: 1 }}
